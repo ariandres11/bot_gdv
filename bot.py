@@ -4,231 +4,102 @@ from api import AternosAPI
 import secretos
 import json
 import os
+import random
+import requests
 
 # Configura tus credenciales
 headers_cookie = "ATERNOS_SESSION=AuXbFYGj5SmDWJ6L2JdX7dm2wfONUwDC3K6xxoQ3e1KTU4oJQcPdFAsPZ0FM4pV2zZDbJXMchhu548jmIR2O8YP7RWdIdF4Ubxdm; ATERNOS_SEC_xxxxx=yyyyy; ATERNOS_SERVER=84jkIui0VIWl9vQ6"
 aternos = AternosAPI(headers_cookie, secretos.TOKEN)
 
+# Define the bot prefix and intents
 intents = discord.Intents.default()
 intents.message_content = True
+intents.messages = True
 
-bot = commands.Bot(command_prefix='$', intents=intents)
+bot = commands.Bot(command_prefix="!", intents=intents)
 
-COORDS_FILE = "./coordenadas.json"
+# Define the target user ID
+TARGET_USER_ID = 689129289001730093
 
-def cargar_coordenadas_archivo():
-    if not os.path.exists(COORDS_FILE):
-        with open(COORDS_FILE, "w") as f:
-            json.dump({}, f)
-    with open(COORDS_FILE, "r") as f:
-        return json.load(f)
+FRASES_FILE = "./frases.json"
 
-def guardar_coordenadas_archivo(data):
-    with open(COORDS_FILE, "w") as f:
-        json.dump(data, f, indent=2)
 
-@bot.command()
-async def status(ctx):
-    estado = await aternos.GetStatus()
-    await ctx.send(f"Estado del servidor: {estado}")
 
-@bot.command()
-async def start(ctx):
-    resultado = await aternos.StartServer()
-    await ctx.send(resultado)
+def get_random_gif():
+    # Example using Tenor API (replace 'YOUR_TENOR_API_KEY' with your actual API key)
+    search_term = "funny"
+    url = f"https://g.tenor.com/v1/random?q={search_term}&limit=1"
+    response = requests.get(url)
+    if response.status_code == 200:
+        gifs = response.json().get("results", [])
+        if gifs:
+            return gifs[0].get("media")[0].get("gif").get("url")
+    return None
 
-@bot.command()
-async def stop(ctx):
-    resultado = await aternos.StopServer()
-    await ctx.send(resultado)
+def get_random_phrase():
+    # Lista de frases aleatorias
+    phrases = [
+        "¿Ya tomaste la leche?",
+        "Siempre hay GDV <3",
+        "Toma esta frase motivadora: ¡Nunca te rindas, los sueños se cumplen!",
+        "Toma esta frase motivadora: ¡El éxito es la suma de pequeños esfuerzos repetidos día tras día!",
+        "Toma esta frase motivadora: ¡La vida es un 10% lo que te ocurre y un 90% cómo reaccionas!"
+    ]
+    return random.choice(phrases)
 
-@bot.command()
-async def info(ctx):
-    info = await aternos.GetServerInfo()
-    await ctx.send(f"Info: {info}")
+def get_random_phrase_from_file():
+    with open("frases.json", "r", encoding="utf-8") as file:
+        data = json.load(file)
+        return random.choice(data)["frase"]
 
-@bot.command()
-async def cargar_coordenadas(ctx, nombre: str, x: int, z: int, dimension: str):
-    data = cargar_coordenadas_archivo()
-    user_id = str(ctx.author.id)
-    user_coords = data.setdefault(user_id, {})
-    user_coords[nombre] = {
-        "coordenadas": f"{x} {z}",
-        "dimension": dimension.lower()
-    }
-    guardar_coordenadas_archivo(data)
-    embed = discord.Embed(
-        title="✅ Coordenada guardada",
-        description=f"**{nombre}**\n📍 Coordenadas: `{x} {z}`\n🌎 Dimensión: `{dimension.lower()}`",
-        color=0x57F287
-    )
-    await ctx.send(embed=embed)
+def save_last_user_id(user_id):
+    with open("ids.json", "r+", encoding="utf-8") as file:
+        data = json.load(file)
+        # Update or add the last user ID
+        data.append({"last_user_id": user_id})
+        file.seek(0)
+        json.dump(data, file, ensure_ascii=False, indent=2)
+        file.truncate()
 
-@bot.command()
-async def coords(ctx):
-    data = cargar_coordenadas_archivo()
-    embed = discord.Embed(
-        title="📒 Todas las coordenadas",
-        color=0x5865F2
-    )
-    for user_id, user_coords in data.items():
-        try:
-            user = ctx.guild.get_member(int(user_id))  # Try to get the user from the server
-            if user:  # If the user is in the server, use their display name
-                username = user.display_name
-            else:  # If the user is not in the server, fetch their info
-                user = await bot.fetch_user(int(user_id))
-                username = user.name if user else "Usuario desconocido"
-        except Exception as e:
-            username = "Usuario desconocido"
-            print(f"Error retrieving user: {e}")
-        for nombre, info in user_coords.items():
-            emoji = "🌎"
-            if "nether" in info["dimension"]:
-                emoji = "🔥"
-            elif "end" in info["dimension"]:
-                emoji = "🌌"
-            embed.add_field(
-                name=f"{emoji} {nombre} (por {username})",
-                value=f"📍 {info['coordenadas']}\n🌐 {info['dimension']}",
-                inline=False
-            )
-    await ctx.send(embed=embed)
+def save_user_id(user_id):
+    ids_file = "ids.json"
+    if not os.path.exists(ids_file):
+        with open(ids_file, "w", encoding="utf-8") as file:
+            json.dump({}, file)
 
-@bot.command()
-async def borrar_coordenada(ctx, nombre: str):
-    data = cargar_coordenadas_archivo()
-    user_id = str(ctx.author.id)
-    user_coords = data.get(user_id, {})
-    if nombre in user_coords:
-        del user_coords[nombre]
-        data[user_id] = user_coords
-        guardar_coordenadas_archivo(data)
+    with open(ids_file, "r+", encoding="utf-8") as file:
+        data = json.load(file)
+        if str(user_id) not in data:
+            data[str(user_id)] = {"messages_count": 1}
+        else:
+            data[str(user_id)]["messages_count"] += 1
+        file.seek(0)
+        json.dump(data, file, ensure_ascii=False, indent=2)
+        file.truncate()
+
+@bot.event
+async def on_ready():
+    print(f"Bot is ready! Logged in as {bot.user}")
+
+@bot.event
+async def on_message(message):
+    # Save the ID of the user who sent the message
+    save_user_id(message.author.id)
+    
+    # Check if the message is from the target user
+    if message.author.id == TARGET_USER_ID:
+        phrase = get_random_phrase_from_file()
         embed = discord.Embed(
-            title="🗑️ Coordenada eliminada",
-            description=f"Se eliminó **{nombre}**.",
-            color=0xED4245
+            title="Frase del día 🌟",
+            description=phrase,
+            color=discord.Color.blue()
         )
-        await ctx.send(embed=embed)
+        embed.set_footer(text="Siempre hay GDV 💙")
+        await message.channel.send(embed=embed)
     else:
-        embed = discord.Embed(
-            title="❌ No existe esa coordenada.",
-            color=0xED4245
-        )
-        await ctx.send(embed=embed)
+        # Process other commands/messages
+        await bot.process_commands(message)
 
-@bot.command()
-async def editar_coordenada(ctx, nombre: str, x: int, z: int, dimension: str):
-    data = cargar_coordenadas_archivo()
-    user_id = str(ctx.author.id)
-    user_coords = data.get(user_id, {})
-    if nombre in user_coords:
-        user_coords[nombre] = {
-            "coordenadas": f"{x} {z}",
-            "dimension": dimension.lower()
-        }
-        data[user_id] = user_coords
-        guardar_coordenadas_archivo(data)
-        embed = discord.Embed(
-            title="✏️ Coordenada actualizada",
-            description=f"**{nombre}** ahora es `{x} {z}` en `{dimension.lower()}`",
-            color=0xFEE75C
-        )
-        await ctx.send(embed=embed)
-    else:
-        embed = discord.Embed(
-            title="❌ No existe esa coordenada.",
-            color=0xED4245
-        )
-        await ctx.send(embed=embed)
-
-@bot.command(name="help_ari")
-async def help_ari(ctx):
-    embed = discord.Embed(
-        title="📖 Comandos disponibles",
-        description="Lista de comandos del bot:",
-        color=0x3498db
-    )
-    embed.add_field(
-        name="🟢 $status",
-        value="Muestra el estado actual del servidor.",
-        inline=False
-    )
-    embed.add_field(
-        name="▶️ $start",
-        value="Inicia el servidor.",
-        inline=False
-    )
-    embed.add_field(
-        name="⏹️ $stop",
-        value="Detiene el servidor.",
-        inline=False
-    )
-    embed.add_field(
-        name="ℹ️ $info",
-        value="Muestra información del servidor.",
-        inline=False
-    )
-    embed.add_field(
-        name="📍 $cargar_coordenadas <nombre> <x> <z> <dimension>",
-        value="Guarda una coordenada con nombre, posición y dimensión.",
-        inline=False
-    )
-    embed.add_field(
-        name="📒 $coords",
-        value="Muestra todas tus coordenadas guardadas.",
-        inline=False
-    )
-    embed.add_field(
-        name="🗑️ $borrar_coordenada <nombre>",
-        value="Elimina una coordenada guardada por nombre.",
-        inline=False
-    )
-    embed.add_field(
-        name="✏️ $editar_coordenada <nombre> <x> <z> <dimension>",
-        value="Edita una coordenada existente.",
-        inline=False
-    )
-    embed.add_field(
-        name="🔍 $buscar <texto>",
-        value="Busca coordenadas por nombre (búsqueda parcial).",
-        inline=False
-    )
-    await ctx.send(embed=embed)
-
-@bot.command()
-async def buscar(ctx, *, texto: str):
-    data = cargar_coordenadas_archivo()
-    resultados = []
-    texto = texto.lower()
-    for user_id, user_coords in data.items():
-        for nombre, info in user_coords.items():
-            if texto in nombre.lower():
-                resultados.append((nombre, info))
-    if not resultados:
-        embed = discord.Embed(
-            title="🔍 Sin resultados",
-            description=f"No se encontraron coordenadas que contengan: `{texto}`",
-            color=0xED4245
-        )
-        await ctx.send(embed=embed)
-    else:
-        embed = discord.Embed(
-            title=f"🔍 Resultados para '{texto}'",
-            color=0x5865F2
-        )
-        for nombre, info in resultados:
-            emoji = "🌎"
-            if "nether" in info["dimension"]:
-                emoji = "🔥"
-            elif "end" in info["dimension"]:
-                emoji = "🟣"
-            embed.add_field(
-                name=f"{emoji} {nombre}",
-                value=f"📍 `{info['coordenadas']}`\n🌐 `{info['dimension']}`",
-                inline=False
-            )
-        await ctx.send(embed=embed)
 
 bot.remove_command('help')
 
